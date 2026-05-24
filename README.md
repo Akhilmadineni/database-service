@@ -1,47 +1,17 @@
 # database-service
 
-`database-service` is an independent application that provisions and manages per-application PostgreSQL databases and credentials.
+This repo is being reset around the Rust-first roadmap in `ROADMAP.md`.
 
-## Features
-- Creates or reuses one isolated database per app/environment.
-- Creates or rotates one dedicated DB role per app/environment.
-- Returns application connection details immediately after provisioning.
-- Optionally stores credentials in `secret-service`.
+## Current State
+- The previous Node/TypeScript prototype has been removed.
+- The remaining content is planning and roadmap material for the Rust-based database control plane.
 
-## API
-- `GET /health`
-- `POST /v1/databases/provision`
-- `GET /v1/databases/:app/:environment`
+## Direction
+- Rust stable, edition 2024
+- `axum` for the HTTP API
+- `tokio` for async runtime
+- `sqlx` for PostgreSQL access and migrations
 
-Example provision payload:
-
-```json
-{
-  "app": "clustr",
-  "environment": "prod",
-  "engine": "postgres",
-  "storeCredentials": true
-}
-```
-
-## Environment
-See `.env.example`.
-
-## Run
-```bash
-npm install
-npm run dev
-```
-
-## Docker
-```bash
-docker compose up --build
-```
-
-## Notes
-- Treat this service as internal-only infrastructure.
-- Restrict network access to trusted platform services.
-- For production, use a managed or HA PostgreSQL setup for the admin target.
-
-## Roadmap
-- See `ROADMAP.md` for production milestones.
+## Next Reference
+- Read `ROADMAP.md` for the target architecture and delivery phases.
+- See `plan/phase-0/` for the current planning workstreams.
