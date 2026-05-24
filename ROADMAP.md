@@ -1,64 +1,84 @@
 # database-service Roadmap
 
 ## Mission
-Deliver a secure database control plane that provisions isolated data stores for each application and environment across the NAS platform.
+Build a DB-only autonomous database control plane for NAS environments that provisions, secures, and self-heals PostgreSQL tenants with deterministic behavior and auditable operations.
 
-## Product Scope
-- Provision per-app/per-environment PostgreSQL database + credentials.
-- Rotate credentials with minimal/no downtime patterns.
-- Store and distribute DB connection material through `secret-service`.
-- Enforce policy, auditability, and lifecycle controls.
+## Product Positioning
+- This service is the database control layer, not a generic secret-management product.
+- Primary target: Oracle ADB-like operational autonomy for PostgreSQL tenant lifecycle.
+- Core differentiator: novel autonomous reconciliation mechanism with reversible remediation.
 
-## Phase Plan
+## Novel Mechanism: Autonomous Capsule Reconciler (ACR)
+Each app/environment is managed as a Database Capsule:
+- Desired state: database, roles, grants, connection/session limits, backup class, SLO class.
+- Compiler: translates capsule spec into executable policy + SQL plan.
+- Fingerprint: canonical hash of intended state and observed catalog state.
+- Reconciler: computes minimal remediation, applies staged changes, verifies invariants.
+- Safety: reversible checkpoints with automatic rollback on failed verification.
+- Audit: tamper-evident operation ledger for lifecycle events.
 
-## Phase 0 - Core Provisioning (Week 0-2)
-- Stable API for create/inspect provisioning actions.
-- Idempotent provisioning behavior for repeated requests.
-- Strict naming conventions and input validation.
-- API-key or mTLS authentication for service-to-service calls.
+## Program Timeline
+Program start date: 2026-05-25
+Program duration: 10 weeks
 
-Exit criteria:
-- App DB provisioning works reliably for dev/staging/prod.
-- Duplicate calls are safe and deterministic.
-
-## Phase 1 - Security and Secret Integration (Week 2-4)
-- Tight integration with `secret-service` for credential escrow.
-- Credential rotation endpoint and runbook.
-- Audit logs for all credential and database lifecycle actions.
-- Least-privilege DB roles and grants by default.
-
-Exit criteria:
-- All issued DB credentials are available through secret-service.
-- Rotation flows are tested without service interruption.
-
-## Phase 2 - Reliability and Backups (Week 4-6)
-- Backup policy orchestration hooks (full + incremental strategy).
-- Health checks for DB reachability, role drift, and grants drift.
-- Alerting on failed provisioning/rotation and backup lag.
-- Recovery drill automation and documented RPO/RTO targets.
+## Phase 1 - Invention Freeze and Claims Mapping (Week 1-2, 2026-05-25 to 2026-06-07)
+- Freeze ACR mechanism boundaries and terminology.
+- Author system architecture and lifecycle state-machine diagrams.
+- Produce a prior-art matrix and claim-ready novelty statements.
+- Define measurable technical advantages and benchmark plan.
 
 Exit criteria:
-- Recoverability validated in scheduled restore drills.
+- ACR specification is approved as the source of truth.
+- Novelty statements are concrete enough for provisional filing draft.
 
-## Phase 3 - Multi-Tenant Governance (Week 6-8)
-- Application registration and ownership model.
-- Quotas and resource limits per app/environment.
-- Change approval flow for destructive operations.
-- Metadata catalog (who owns which DB, retention class, backup policy).
-
-Exit criteria:
-- Platform can scale to many apps with clear ownership and controls.
-
-## Phase 4 - Advanced Platform Features (Week 8-10)
-- Optional read replica provisioning workflows.
-- Optional point-in-time restore orchestration.
-- Tenant-specific maintenance windows and policy profiles.
-- Integration with CI/CD for ephemeral preview environments.
+## Phase 2 - Control-Plane Data Model and Idempotent Ops (Week 3-4, 2026-06-08 to 2026-06-21)
+- Add metadata schema: `capsule`, `capsule_revision`, `operation`, `reconciliation_run`, `audit_event`.
+- Add idempotency keys for create/update/reconcile APIs.
+- Add deterministic operation replay and failure recovery semantics.
+- Add API contracts for `provision`, `inspect`, and `reconcile` actions.
 
 Exit criteria:
-- Database lifecycle is fully automatable for application teams.
+- Repeated requests produce deterministic outcomes.
+- Operation journal is complete for all write paths.
+
+## Phase 3 - Capsule Compiler and Fingerprint Engine (Week 5-6, 2026-06-22 to 2026-07-05)
+- Implement capsule spec parser and validation pipeline.
+- Implement SQL plan generation from normalized capsule definitions.
+- Implement canonical fingerprint generation for desired and observed state.
+- Implement drift classification (safe, warning, critical) and drift scoring.
+
+Exit criteria:
+- Capsule-to-plan compiler is deterministic for identical inputs.
+- Fingerprint and drift outputs are stable across repeated inspections.
+
+## Phase 4 - Autonomous Reconciliation and Safe Rollback (Week 7-8, 2026-07-06 to 2026-07-19)
+- Implement staged reconciliation executor with pre/post verification checks.
+- Implement reversible checkpoints for grants, role settings, and ownership mutations.
+- Add session-aware safety checks using PostgreSQL runtime telemetry.
+- Implement automatic rollback with root-cause annotation in operation journal.
+
+Exit criteria:
+- Failed reconciliation attempts auto-rollback without manual SQL intervention.
+- Verification guards prevent unsafe destructive operations by default.
+
+## Phase 5 - NAS Production Hardening and Filing Package (Week 9-10, 2026-07-20 to 2026-08-02)
+- Ship production NAS deployment profile (compose, persistence, health probes).
+- Add observability stack: metrics, structured logs, reconciliation dashboards.
+- Complete backup/recovery drill scripts and recovery validation report.
+- Prepare patent evidence package: diagrams, benchmarks, novelty mapping, and claim-support tables.
+
+Exit criteria:
+- Production deployment runbook is validated end-to-end on NAS.
+- Filing package contains reproducible technical evidence for the mechanism.
 
 ## Success Metrics
-- 99.95%+ successful provisioning operations.
-- 100% database credentials managed via secret-service.
-- Database onboarding time reduced from hours to minutes.
+- 99.95%+ successful provisioning and reconciliation operations.
+- Mean drift-detection to corrected-state time under 5 minutes for safe class drift.
+- 100% of write operations captured in tamper-evident ledger.
+- Zero non-reversible mutations in automated reconciliation mode.
+
+## Immediate Next Steps (Execution Order)
+1. Implement Phase 2 schema and operation journal.
+2. Add capsule API contracts and idempotency middleware.
+3. Build compiler + fingerprint module behind feature flags.
+4. Enable reconciliation executor for internal environments only.
