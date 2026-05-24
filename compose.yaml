@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: database-service-postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "15432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  database-service:
+    build: .
+    container_name: database-service
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    ports:
+      - "18092:8080"
+    restart: unless-stopped
