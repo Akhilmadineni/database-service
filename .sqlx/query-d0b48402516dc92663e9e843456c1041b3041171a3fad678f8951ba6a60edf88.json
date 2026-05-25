@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                 c.capsule_id,\n                 c.app,\n                 c.environment,\n                 c.status,\n                 c.current_desired_fingerprint,\n                 c.backup_class,\n                 c.slo_class,\n                 cr.revision_number AS \"current_revision_number?\"\n             FROM capsule c\n             LEFT JOIN capsule_revision cr\n               ON cr.capsule_revision_id = c.current_revision_id\n             WHERE c.app = $1 AND c.environment = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "capsule_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "app",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "environment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "current_desired_fingerprint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "backup_class",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "slo_class",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "current_revision_number?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d0b48402516dc92663e9e843456c1041b3041171a3fad678f8951ba6a60edf88"
+}

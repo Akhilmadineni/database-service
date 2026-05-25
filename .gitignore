@@ -1,4 +1,4 @@
-node_modules/
-dist/
+target/
 .env
 data/
+api-smoke*.log

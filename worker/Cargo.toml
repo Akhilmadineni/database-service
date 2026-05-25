@@ -1,0 +1,16 @@
+[package]
+name = "database-service-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+db_core = { package = "database-service-core", path = "../core" }
+database_service_store = { package = "database-service-store", path = "../store" }
+database_service_telemetry = { package = "database-service-telemetry", path = "../telemetry" }
+
+[lints]
+workspace = true

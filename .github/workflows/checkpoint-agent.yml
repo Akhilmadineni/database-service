@@ -1,0 +1,75 @@
+name: checkpoint-agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to checkpoint
+        required: false
+        default: main
+      checkpoint_name:
+        description: Optional label to append to the checkpoint tag
+        required: false
+      promote_branch:
+        description: Optional branch to fast-forward to this validated ref
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create checkpoint tag
+        id: checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          STAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
+          LABEL="${{ inputs.checkpoint_name }}"
+          if [[ -n "$LABEL" ]]; then
+            SAFE_LABEL="$(echo "$LABEL" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g' | sed -E 's/^-+|-+$//g')"
+            TAG_NAME="checkpoint/${STAMP}-${SHORT_SHA}-${SAFE_LABEL}"
+          else
+            TAG_NAME="checkpoint/${STAMP}-${SHORT_SHA}"
+          fi
+          git tag -a "$TAG_NAME" "$SHA" -m "Checkpoint for $SHA"
+          git push origin "$TAG_NAME"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Promote validated ref to branch
+        if: ${{ inputs.promote_branch != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:refs/heads/${{ inputs.promote_branch }}"
+
+      - name: Write summary
+        shell: bash
+        run: |
+          {
+            echo "## Checkpoint Agent"
+            echo ""
+            echo "- Ref: \`${{ inputs.ref }}\`"
+            echo "- Commit: \`${{ steps.checkpoint.outputs.sha }}\`"
+            echo "- Checkpoint tag: \`${{ steps.checkpoint.outputs.tag_name }}\`"
+            if [[ -n "${{ inputs.promote_branch }}" ]]; then
+              echo "- Promoted branch: \`${{ inputs.promote_branch }}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

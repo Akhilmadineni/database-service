@@ -17,4 +17,10 @@ How to use this folder:
 - Keep each file updated with status notes and decisions.
 - Link ADRs and diagrams from each workstream file.
 - Do not start Phase 1 coding until all Phase 0 exit items are checked.
+- Keep Phase 0 implementation detail inside this folder tree only.
 
+Current status:
+- Workstream 01 drafted in `plan/phase-0/acr/`
+- Workstream 02 drafted in `plan/phase-0/foundation/`
+- Workstream 03 drafted in `plan/phase-0/security/`
+- Workstream 04 readiness package drafted in `plan/phase-0/kickoff/`

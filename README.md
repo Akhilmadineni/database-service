@@ -14,4 +14,4 @@ This repo is being reset around the Rust-first roadmap in `ROADMAP.md`.
 
 ## Next Reference
 - Read `ROADMAP.md` for the target architecture and delivery phases.
-- See `plan/phase-0/` for the current planning workstreams.
+- Use `plan/` as the single source of truth for phased implementation detail.

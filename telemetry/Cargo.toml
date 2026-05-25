@@ -1,0 +1,12 @@
+[package]
+name = "database-service-telemetry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

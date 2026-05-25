@@ -1,0 +1,82 @@
+name: validator-agent
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure planning files exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f plan/README.md
+          test -f plan/agents/README.md
+          test -f plan/phase-1/README.md
+
+      - name: Verify plan remains the source of truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d docs ]]; then
+            echo "docs/ should not exist; plan/ is the source of truth for implementation detail." >&2
+            exit 1
+          fi
+
+  rust-validation:
+    runs-on: ubuntu-latest
+    needs: plan-guard
+    if: ${{ hashFiles('Cargo.toml') != '' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+
+      - name: Cargo fmt
+        run: cargo fmt --all --check
+
+      - name: Cargo clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Cargo build
+        run: cargo build --workspace --locked
+
+      - name: Cargo test
+        run: cargo test --workspace --all-features
+
+      - name: Install SQLx CLI when metadata exists
+        if: ${{ hashFiles('.sqlx/**') != '' }}
+        run: cargo install sqlx-cli --locked --no-default-features --features rustls,postgres
+
+      - name: SQLx metadata check
+        if: ${{ hashFiles('.sqlx/**') != '' }}
+        run: cargo sqlx prepare --check
+
+  no-rust-yet:
+    runs-on: ubuntu-latest
+    needs: plan-guard
+    if: ${{ hashFiles('Cargo.toml') == '' }}
+    steps:
+      - name: Emit placeholder validation summary
+        shell: bash
+        run: |
+          echo "No Cargo workspace is present yet."
+          echo "Validator agent completed plan-guard checks only."

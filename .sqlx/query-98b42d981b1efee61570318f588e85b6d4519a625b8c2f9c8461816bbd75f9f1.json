@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             capsule_id,\n             app,\n             environment,\n             status,\n             current_desired_fingerprint,\n             backup_class,\n             slo_class,\n             NULL::bigint AS \"current_revision_number?\"\n         FROM capsule\n         WHERE app = $1 AND environment = $2\n         FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "capsule_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "app",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "environment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "current_desired_fingerprint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "backup_class",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "slo_class",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "current_revision_number?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "98b42d981b1efee61570318f588e85b6d4519a625b8c2f9c8461816bbd75f9f1"
+}

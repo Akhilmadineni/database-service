@@ -1,0 +1,17 @@
+[package]
+name = "database-service-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+db_core = { package = "database-service-core", path = "../core" }
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+time.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

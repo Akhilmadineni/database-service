@@ -1,0 +1,69 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO capsule (\n             capsule_id,\n             app,\n             environment,\n             status,\n             backup_class,\n             slo_class\n         )\n         VALUES ($1, $2, $3, $4, $5, $6)\n         RETURNING\n             capsule_id,\n             app,\n             environment,\n             status,\n             current_desired_fingerprint,\n             backup_class,\n             slo_class,\n             NULL::bigint AS \"current_revision_number?\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "capsule_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "app",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "environment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "current_desired_fingerprint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "backup_class",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "slo_class",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "current_revision_number?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "326709ee9b35c26cc243c33e84d32e173d99a13ef36a0441ba33f6b6dc02f670"
+}

@@ -1,0 +1,23 @@
+[package]
+name = "database-service-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+db_core = { package = "database-service-core", path = "../core" }
+database_service_store = { package = "database-service-store", path = "../store" }
+database_service_telemetry = { package = "database-service-telemetry", path = "../telemetry" }
+
+[lints]
+workspace = true
