@@ -9,6 +9,11 @@ Initial inputs from Phase 3:
 - observed state includes runtime session and lock counts
 
 Likely tasks:
-- [ ] add structured reconciliation metrics
-- [ ] add Prometheus-friendly metrics export
-- [ ] define dashboards for reconciliation success, rollback, and blocked states
+- [x] add structured reconciliation metrics
+- [x] add Prometheus-friendly metrics export
+- [x] define dashboards for reconciliation success, rollback, and blocked states
+
+Status notes:
+- 2026-05-25: Added Prometheus-friendly request and reconciliation counters in `telemetry`.
+- 2026-05-25: Added `/metrics` to the API and request metrics middleware.
+- 2026-05-25: Added `plan/phase-4/dashboard-spec.md` as the operator dashboard baseline.

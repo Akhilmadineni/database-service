@@ -8,6 +8,10 @@ Inputs from completed phases:
 - normalized capsule, fingerprint, drift, plan, checkpoint, and rollback behavior from Phases 2 and 3
 
 Likely tasks:
-- [ ] capture reproducible benchmark outputs for deterministic fingerprints and rollback behavior
-- [ ] collect diagrams and lifecycle traces from the implemented system
-- [ ] note any remaining gaps between the implementation and the Phase 0 mechanism description
+- [x] capture reproducible benchmark outputs for deterministic fingerprints and rollback behavior
+- [x] collect diagrams and lifecycle traces from the implemented system
+- [x] note any remaining gaps between the implementation and the Phase 0 mechanism description
+
+Status notes:
+- 2026-05-25: Added `plan/phase-4/filing-evidence-summary.md` to tie the implementation back to the Phase 0 invention package.
+- 2026-05-25: The primary remaining filing gap is not mechanism implementation but packaging benchmark and drill outputs into a formal evidence set.

@@ -55,7 +55,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          IMAGE_NAME="${DEFAULT_IMAGE_NAME}"
+          IMAGE_NAME="${{ vars.IMAGE_NAME }}"
+          if [[ -z "$IMAGE_NAME" ]]; then
+            IMAGE_NAME="${DEFAULT_IMAGE_NAME}"
+          fi
           IMAGE_REF="${IMAGE_NAME}:${GITHUB_SHA}"
           echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
 
@@ -68,7 +71,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             ${{ steps.image.outputs.image_ref }}
-            ${{ env.DEFAULT_IMAGE_NAME }}:main
+            ${{ vars.IMAGE_NAME || env.DEFAULT_IMAGE_NAME }}:main
 
   deploy:
     runs-on: ubuntu-latest
@@ -96,9 +99,11 @@ jobs:
           GHCR_DEPLOY_TOKEN: ${{ secrets.GHCR_DEPLOY_TOKEN }}
           IMAGE_REF: ${{ needs.build.outputs.image_ref }}
           NAS_COMPOSE_FILE: ${{ vars.NAS_COMPOSE_FILE }}
+          NAS_ENV_FILE: ${{ vars.NAS_ENV_FILE }}
         run: |
           set -euo pipefail
           COMPOSE_FILE="${NAS_COMPOSE_FILE:-compose.prod.yaml}"
+          ENV_FILE="${NAS_ENV_FILE:-prod.env}"
           cat > .gha-deploy.env <<EOF
           IMAGE_REF=${IMAGE_REF}
           GHCR_DEPLOY_USERNAME=${GHCR_DEPLOY_USERNAME}
@@ -108,10 +113,13 @@ jobs:
           ssh "${NAS_SSH_USER}@${NAS_HOST}" \
             "set -euo pipefail; \
              cd '${NAS_DEPLOY_PATH}'; \
+             test -f '${ENV_FILE}'; \
+             cp '${ENV_FILE}' .gha-runtime.env; \
+             cat .gha-deploy.env >> .gha-runtime.env; \
              . ./.gha-deploy.env; \
              echo \"\$GHCR_DEPLOY_TOKEN\" | docker login ghcr.io -u \"\$GHCR_DEPLOY_USERNAME\" --password-stdin; \
-             docker compose --env-file .gha-deploy.env -f '${COMPOSE_FILE}' pull; \
-             docker compose --env-file .gha-deploy.env -f '${COMPOSE_FILE}' up -d --remove-orphans; \
+             docker compose --env-file .gha-runtime.env -f '${COMPOSE_FILE}' pull; \
+             docker compose --env-file .gha-runtime.env -f '${COMPOSE_FILE}' up -d --remove-orphans; \
              docker image prune -f"
 
       - name: Write summary

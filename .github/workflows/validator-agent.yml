@@ -40,6 +40,23 @@ jobs:
     runs-on: ubuntu-latest
     needs: plan-guard
     if: ${{ hashFiles('Cargo.toml') != '' }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: database_service
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d database_service"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:55432/database_service
+      TARGET_ADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:55432/database_service
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

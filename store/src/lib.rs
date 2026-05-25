@@ -73,10 +73,12 @@ struct CapsuleRow {
 
 impl StoreBootstrap {
     pub fn from_env() -> Self {
-        let database_url = env::var("DATABASE_URL").ok();
-        let target_admin_database_url = env::var("TARGET_ADMIN_DATABASE_URL")
-            .ok()
-            .or_else(|| database_url.clone());
+        let database_url = read_secret_env("DATABASE_URL", "DATABASE_URL_FILE");
+        let target_admin_database_url = read_secret_env(
+            "TARGET_ADMIN_DATABASE_URL",
+            "TARGET_ADMIN_DATABASE_URL_FILE",
+        )
+        .or_else(|| database_url.clone());
         let run_migrations = env::var("RUN_MIGRATIONS")
             .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(true);
@@ -590,6 +592,20 @@ fn redact_database_url(input: &str) -> String {
         }
         _ => String::from("***"),
     }
+}
+
+fn read_secret_env(value_key: &str, file_key: &str) -> Option<String> {
+    env::var(value_key)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var(file_key).ok().and_then(|path| {
+                std::fs::read_to_string(path)
+                    .ok()
+                    .map(|value| value.trim().to_owned())
+                    .filter(|value| !value.is_empty())
+            })
+        })
 }
 
 impl From<OperationRow> for OperationView {

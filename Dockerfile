@@ -1,7 +1,9 @@
 FROM rust:1.95.0-bookworm AS builder
 WORKDIR /app
+ENV SQLX_OFFLINE=true
 
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY .sqlx ./.sqlx
 COPY api ./api
 COPY core ./core
 COPY migrations ./migrations

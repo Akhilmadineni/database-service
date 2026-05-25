@@ -1,0 +1,43 @@
+services:
+  metadata-postgres:
+    image: postgres:17-alpine
+    container_name: database-service-metadata-dev
+    environment:
+      POSTGRES_DB: database_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55432:5432"
+    volumes:
+      - metadata_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d database_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  database-service-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: database-service-api-dev
+    depends_on:
+      metadata-postgres:
+        condition: service_healthy
+    environment:
+      API_PORT: "8080"
+      DATABASE_URL: postgresql://postgres:postgres@metadata-postgres:5432/database_service
+      TARGET_ADMIN_DATABASE_URL: postgresql://postgres:postgres@metadata-postgres:5432/database_service
+      RUN_MIGRATIONS: "true"
+      DATABASE_MAX_CONNECTIONS: "10"
+      RUST_LOG: database_service_api=info,database_service_store=info
+    ports:
+      - "18080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  metadata_dev_data:

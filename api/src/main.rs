@@ -1,8 +1,10 @@
 use anyhow::Result;
 use axum::{
     Json, Router,
+    extract::MatchedPath,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Request, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post, put},
 };
@@ -46,6 +48,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics))
         .route(
             "/v1/capsules/{app}/{environment}",
             put(put_capsule).get(get_capsule),
@@ -55,6 +58,7 @@ async fn main() -> Result<()> {
             post(reconcile_capsule),
         )
         .route("/v1/operations/{operation_id}", get(get_operation))
+        .layer(middleware::from_fn(http_metrics_middleware))
         .layer(TraceLayer::new_for_http())
         .with_state(AppState {
             service_name: settings.service_name.clone(),
@@ -69,6 +73,16 @@ async fn main() -> Result<()> {
 
 async fn healthz(State(state): State<AppState>) -> Json<HealthPayload> {
     Json(HealthPayload::ok(&state.service_name))
+}
+
+async fn metrics() -> impl IntoResponse {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        database_service_telemetry::render_prometheus_metrics(),
+    )
 }
 
 async fn readyz(State(state): State<AppState>) -> Json<HealthPayload> {
@@ -224,6 +238,7 @@ async fn reconcile_capsule(
         .process_reconcile_operation(operation.operation_id)
         .await
         .map_err(|error| map_store_error(error, request_id.clone()))?;
+    database_service_telemetry::record_reconcile_result(&operation.state);
     let operation_id = operation.operation_id;
 
     Ok((
@@ -417,4 +432,20 @@ fn validate_segment(value: &str, field: &str) -> Result<String, ApiError> {
             String::new(),
         ))
     }
+}
+
+async fn http_metrics_middleware(request: Request<axum::body::Body>, next: Next) -> Response {
+    let matched_path = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|matched| matched.as_str().to_owned())
+        .unwrap_or_else(|| request.uri().path().to_owned());
+    let method = request.method().as_str().to_owned();
+    let response = next.run(request).await;
+    database_service_telemetry::record_http_request(
+        &matched_path,
+        &method,
+        response.status().as_u16(),
+    );
+    response
 }
