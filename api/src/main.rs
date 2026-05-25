@@ -9,12 +9,13 @@ use axum::{
 use database_service_store::{StoreBootstrap, StoreError, StoreRuntime};
 use db_core::{
     api::{ErrorEnvelope, ErrorPayload, ResponseMeta, SuccessEnvelope},
-    capsule::{CapsuleSpec, ReconcileRequest},
+    capsule::{CapsuleSpec, NormalizedCapsule, ReconcileRequest},
     config::ApiSettings,
+    error::CapsuleValidationError,
+    fingerprint::{desired_fingerprint, request_fingerprint},
     health::HealthPayload,
 };
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use uuid::Uuid;
@@ -94,26 +95,40 @@ async fn put_capsule(
     Json(spec): Json<CapsuleSpec>,
 ) -> Result<impl IntoResponse, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let app =
-        validate_segment(&app, "app").map_err(|error| error.with_request_id(request_id.clone()))?;
-    let environment = validate_segment(&environment, "environment")
-        .map_err(|error| error.with_request_id(request_id.clone()))?;
-    validate_capsule_spec(&spec).map_err(|error| error.with_request_id(request_id.clone()))?;
+    let normalized = NormalizedCapsule::from_api(&app, &environment, &spec)
+        .map_err(|error| map_capsule_validation_error(error, request_id.clone()))?;
 
     let idempotency_key = required_header(&headers, "Idempotency-Key", "missing_idempotency_key")
         .map_err(|error| error.with_request_id(request_id.clone()))?;
     let caller_principal = caller_principal_from_headers(&headers);
-    let request_hash = hash_payload(&spec)?;
+    let request_hash = request_fingerprint(&spec).map_err(|error| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "serialization_error",
+            format!("failed to fingerprint request: {error}"),
+            None,
+            request_id.clone(),
+        )
+    })?;
+    let desired_fingerprint = desired_fingerprint(&normalized).map_err(|error| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "fingerprint_error",
+            format!("failed to fingerprint desired state: {error}"),
+            None,
+            request_id.clone(),
+        )
+    })?;
 
     let operation = state
         .store
         .put_capsule_request(
-            &app,
-            &environment,
             &caller_principal,
             &idempotency_key,
             &request_hash,
             &spec,
+            &normalized,
+            &desired_fingerprint,
         )
         .await
         .map_err(|error| map_store_error(error, request_id.clone()))?;
@@ -182,7 +197,15 @@ async fn reconcile_capsule(
     let idempotency_key = required_header(&headers, "Idempotency-Key", "missing_idempotency_key")
         .map_err(|error| error.with_request_id(request_id.clone()))?;
     let caller_principal = caller_principal_from_headers(&headers);
-    let request_hash = hash_payload(&request)?;
+    let request_hash = request_fingerprint(&request).map_err(|error| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "serialization_error",
+            format!("failed to fingerprint request: {error}"),
+            None,
+            request_id.clone(),
+        )
+    })?;
 
     let operation = state
         .store
@@ -194,6 +217,11 @@ async fn reconcile_capsule(
             &request_hash,
             &request,
         )
+        .await
+        .map_err(|error| map_store_error(error, request_id.clone()))?;
+    let operation = state
+        .store
+        .process_reconcile_operation(operation.operation_id)
         .await
         .map_err(|error| map_store_error(error, request_id.clone()))?;
     let operation_id = operation.operation_id;
@@ -322,7 +350,24 @@ fn map_store_error(error: StoreError, request_id: String) -> ApiError {
             None,
             request_id,
         ),
+        StoreError::ReconciliationFailure { message } => ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "reconciliation_failure",
+            message,
+            None,
+            request_id,
+        ),
     }
+}
+
+fn map_capsule_validation_error(error: CapsuleValidationError, request_id: String) -> ApiError {
+    ApiError::new(
+        StatusCode::BAD_REQUEST,
+        "validation_error",
+        error.to_string(),
+        None,
+        request_id,
+    )
 }
 
 fn required_header(headers: &HeaderMap, name: &str, code: &str) -> Result<String, ApiError> {
@@ -372,42 +417,4 @@ fn validate_segment(value: &str, field: &str) -> Result<String, ApiError> {
             String::new(),
         ))
     }
-}
-
-fn validate_capsule_spec(spec: &CapsuleSpec) -> Result<(), ApiError> {
-    if spec.roles.is_empty() {
-        return Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
-            "validation_error",
-            "capsule spec must include at least one role",
-            None,
-            String::new(),
-        ));
-    }
-
-    if spec.privilege_policy.managed_schemas.is_empty() {
-        return Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
-            "validation_error",
-            "capsule spec must include at least one managed schema",
-            None,
-            String::new(),
-        ));
-    }
-
-    Ok(())
-}
-
-fn hash_payload<T: serde::Serialize>(payload: &T) -> Result<String, ApiError> {
-    let body = serde_json::to_vec(payload).map_err(|error| {
-        ApiError::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "serialization_error",
-            format!("failed to serialize payload: {error}"),
-            None,
-            String::new(),
-        )
-    })?;
-    let digest = Sha256::digest(body);
-    Ok(hex::encode(digest))
 }

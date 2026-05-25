@@ -1,7 +1,8 @@
 use std::env;
 
 use db_core::{
-    capsule::{CapsuleSpec, CapsuleView, ReconcileRequest},
+    capsule::{CapsuleSpec, CapsuleView, NormalizedCapsule, ReconcileRequest},
+    fingerprint::canonicalize_json_value,
     operation::{OperationState, OperationView},
 };
 use serde_json::Value;
@@ -11,9 +12,12 @@ use uuid::Uuid;
 
 pub static MIGRATOR: Migrator = sqlx::migrate!("../migrations");
 
+mod reconcile;
+
 #[derive(Clone, Debug)]
 pub struct StoreBootstrap {
     database_url: Option<String>,
+    target_admin_database_url: Option<String>,
     pub run_migrations: bool,
     pub max_connections: u32,
 }
@@ -32,6 +36,8 @@ pub enum StoreError {
     NotFound,
     #[error("idempotency conflict for operation {operation_id}")]
     IdempotencyConflict { operation_id: Uuid },
+    #[error("reconciliation failure: {message}")]
+    ReconciliationFailure { message: String },
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
     #[error(transparent)]
@@ -68,6 +74,9 @@ struct CapsuleRow {
 impl StoreBootstrap {
     pub fn from_env() -> Self {
         let database_url = env::var("DATABASE_URL").ok();
+        let target_admin_database_url = env::var("TARGET_ADMIN_DATABASE_URL")
+            .ok()
+            .or_else(|| database_url.clone());
         let run_migrations = env::var("RUN_MIGRATIONS")
             .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(true);
@@ -79,6 +88,7 @@ impl StoreBootstrap {
 
         Self {
             database_url,
+            target_admin_database_url,
             run_migrations,
             max_connections,
         }
@@ -90,6 +100,12 @@ impl StoreBootstrap {
 
     pub fn redacted_database_url(&self) -> Option<String> {
         self.database_url
+            .as_ref()
+            .map(|value| redact_database_url(value))
+    }
+
+    pub fn redacted_target_admin_database_url(&self) -> Option<String> {
+        self.target_admin_database_url
             .as_ref()
             .map(|value| redact_database_url(value))
     }
@@ -131,22 +147,32 @@ impl StoreRuntime {
         self.settings.redacted_database_url()
     }
 
+    pub fn redacted_target_admin_database_url(&self) -> Option<String> {
+        self.settings.redacted_target_admin_database_url()
+    }
+
     pub fn pool(&self) -> Option<&PgPool> {
         self.pool.as_ref()
     }
 
     pub async fn put_capsule_request(
         &self,
-        app: &str,
-        environment: &str,
         caller_principal: &str,
         idempotency_key: &str,
         request_hash: &str,
         spec: &CapsuleSpec,
+        normalized: &NormalizedCapsule,
+        desired_fingerprint: &str,
     ) -> Result<OperationView, StoreError> {
         let pool = self.require_pool()?;
         let mut transaction = pool.begin().await?;
-        let capsule = get_or_create_capsule(&mut transaction, app, environment, spec).await?;
+        let capsule = get_or_create_capsule(
+            &mut transaction,
+            &normalized.identity.app,
+            &normalized.identity.environment,
+            normalized,
+        )
+        .await?;
 
         if let Some(existing) = find_existing_operation(
             &mut transaction,
@@ -167,13 +193,13 @@ impl StoreRuntime {
             });
         }
 
-        let desired_fingerprint = request_hash.to_owned();
         let revision_id = ensure_capsule_revision(
             &mut transaction,
             capsule.capsule_id,
             caller_principal,
-            &desired_fingerprint,
+            desired_fingerprint,
             spec,
+            normalized,
         )
         .await?;
 
@@ -190,9 +216,9 @@ impl StoreRuntime {
         .bind(capsule.capsule_id)
         .bind("requested")
         .bind(revision_id)
-        .bind(&desired_fingerprint)
-        .bind(&spec.protection_classes.backup_class)
-        .bind(&spec.protection_classes.slo_class)
+        .bind(desired_fingerprint)
+        .bind(&normalized.protection_classes.backup_class)
+        .bind(&normalized.protection_classes.slo_class)
         .execute(transaction.as_mut())
         .await?;
 
@@ -378,13 +404,20 @@ impl StoreRuntime {
     fn require_pool(&self) -> Result<&PgPool, StoreError> {
         self.pool.as_ref().ok_or(StoreError::NotConfigured)
     }
+
+    fn target_admin_database_url(&self) -> Result<&str, StoreError> {
+        self.settings
+            .target_admin_database_url
+            .as_deref()
+            .ok_or(StoreError::NotConfigured)
+    }
 }
 
 async fn get_or_create_capsule(
     transaction: &mut Transaction<'_, Postgres>,
     app: &str,
     environment: &str,
-    spec: &CapsuleSpec,
+    normalized: &NormalizedCapsule,
 ) -> Result<CapsuleRow, StoreError> {
     if let Some(existing) = sqlx::query_as!(
         CapsuleRow,
@@ -434,8 +467,8 @@ async fn get_or_create_capsule(
         app,
         environment,
         "requested",
-        spec.protection_classes.backup_class,
-        spec.protection_classes.slo_class
+        normalized.protection_classes.backup_class,
+        normalized.protection_classes.slo_class
     )
     .fetch_one(transaction.as_mut())
     .await?;
@@ -449,6 +482,7 @@ async fn ensure_capsule_revision(
     caller_principal: &str,
     desired_fingerprint: &str,
     spec: &CapsuleSpec,
+    normalized: &NormalizedCapsule,
 ) -> Result<Uuid, StoreError> {
     let existing_revision_id = sqlx::query_scalar!(
         "SELECT capsule_revision_id
@@ -475,7 +509,7 @@ async fn ensure_capsule_revision(
 
     let revision_id = Uuid::new_v4();
     let spec_json = serde_json::to_value(spec)?;
-    let normalized_spec_json = normalize_spec(spec)?;
+    let normalized_spec_json = normalize_capsule(normalized)?;
 
     sqlx::query(
         "INSERT INTO capsule_revision (
@@ -539,37 +573,10 @@ async fn find_existing_operation(
     Ok(operation)
 }
 
-fn normalize_spec(spec: &CapsuleSpec) -> Result<Value, serde_json::Error> {
-    let mut value = serde_json::to_value(spec)?;
-    sort_json_value(&mut value);
+fn normalize_capsule(capsule: &NormalizedCapsule) -> Result<Value, serde_json::Error> {
+    let mut value = serde_json::to_value(capsule)?;
+    canonicalize_json_value(&mut value);
     Ok(value)
-}
-
-fn sort_json_value(value: &mut Value) {
-    match value {
-        Value::Array(values) => {
-            for item in values.iter_mut() {
-                sort_json_value(item);
-            }
-
-            values.sort_by_key(|left| left.to_string());
-        }
-        Value::Object(map) => {
-            let mut entries = map
-                .iter_mut()
-                .map(|(key, value)| {
-                    sort_json_value(value);
-                    (key.clone(), value.clone())
-                })
-                .collect::<Vec<_>>();
-            entries.sort_by(|left, right| left.0.cmp(&right.0));
-            map.clear();
-            for (key, value) in entries {
-                map.insert(key, value);
-            }
-        }
-        _ => {}
-    }
 }
 
 fn redact_database_url(input: &str) -> String {
@@ -621,9 +628,12 @@ impl From<CapsuleRow> for CapsuleView {
 #[cfg(test)]
 mod tests {
     use super::{StoreBootstrap, StoreError, redact_database_url};
-    use db_core::capsule::{
-        CapsuleSpec, DatabaseSpec, PrivilegePolicy, ProtectionClasses, ReconcileRequest, RoleSpec,
-        SafetyPolicy,
+    use db_core::{
+        capsule::{
+            CapsuleSpec, DatabaseSpec, NormalizedCapsule, PrivilegePolicy, ProtectionClasses,
+            ReconcileRequest, RoleSpec, SafetyPolicy,
+        },
+        fingerprint::{desired_fingerprint, request_fingerprint},
     };
     use sqlx::Row;
     use uuid::Uuid;
@@ -645,6 +655,7 @@ mod tests {
 
         let runtime = StoreBootstrap {
             database_url: Some(database_url),
+            target_admin_database_url: None,
             run_migrations: true,
             max_connections: 2,
         }
@@ -682,6 +693,7 @@ mod tests {
 
         let runtime = StoreBootstrap {
             database_url: Some(database_url),
+            target_admin_database_url: None,
             run_migrations: true,
             max_connections: 2,
         }
@@ -689,30 +701,34 @@ mod tests {
         .await
         .expect("store bootstrap should succeed");
 
-        let app = format!("app-{}", Uuid::new_v4().simple());
-        let environment = format!("env-{}", Uuid::new_v4().simple());
+        let app = format!("app{}", Uuid::new_v4().simple());
+        let environment = String::from("prod");
         let spec = sample_spec(&app, &environment);
+        let normalized = NormalizedCapsule::from_api(&app, &environment, &spec)
+            .expect("capsule should normalize");
+        let request_hash = request_fingerprint(&spec).expect("request hash should build");
+        let desired = desired_fingerprint(&normalized).expect("desired fingerprint should build");
 
         let first = runtime
             .put_capsule_request(
-                &app,
-                &environment,
                 "test-principal",
                 "idem-key-1",
-                "hash-1",
+                &request_hash,
                 &spec,
+                &normalized,
+                &desired,
             )
             .await
             .expect("first request should succeed");
 
         let second = runtime
             .put_capsule_request(
-                &app,
-                &environment,
                 "test-principal",
                 "idem-key-1",
-                "hash-1",
+                &request_hash,
                 &spec,
+                &normalized,
+                &desired,
             )
             .await
             .expect("second request should resolve to same operation");
@@ -728,6 +744,7 @@ mod tests {
 
         let runtime = StoreBootstrap {
             database_url: Some(database_url),
+            target_admin_database_url: None,
             run_migrations: true,
             max_connections: 2,
         }
@@ -735,30 +752,33 @@ mod tests {
         .await
         .expect("store bootstrap should succeed");
 
-        let app = format!("app-{}", Uuid::new_v4().simple());
-        let environment = format!("env-{}", Uuid::new_v4().simple());
+        let app = format!("app{}", Uuid::new_v4().simple());
+        let environment = String::from("prod");
         let spec = sample_spec(&app, &environment);
+        let normalized = NormalizedCapsule::from_api(&app, &environment, &spec)
+            .expect("capsule should normalize");
+        let desired = desired_fingerprint(&normalized).expect("desired fingerprint should build");
 
         let first = runtime
             .put_capsule_request(
-                &app,
-                &environment,
                 "test-principal",
                 "idem-key-2",
                 "hash-a",
                 &spec,
+                &normalized,
+                &desired,
             )
             .await
             .expect("first request should succeed");
 
         let error = runtime
             .put_capsule_request(
-                &app,
-                &environment,
                 "test-principal",
                 "idem-key-2",
                 "hash-b",
                 &spec,
+                &normalized,
+                &desired,
             )
             .await
             .expect_err("second request should conflict");
@@ -779,6 +799,7 @@ mod tests {
 
         let runtime = StoreBootstrap {
             database_url: Some(database_url),
+            target_admin_database_url: None,
             run_migrations: true,
             max_connections: 2,
         }
@@ -786,18 +807,22 @@ mod tests {
         .await
         .expect("store bootstrap should succeed");
 
-        let app = format!("app-{}", Uuid::new_v4().simple());
-        let environment = format!("env-{}", Uuid::new_v4().simple());
+        let app = format!("app{}", Uuid::new_v4().simple());
+        let environment = String::from("prod");
         let spec = sample_spec(&app, &environment);
+        let normalized = NormalizedCapsule::from_api(&app, &environment, &spec)
+            .expect("capsule should normalize");
+        let request_hash = request_fingerprint(&spec).expect("request hash should build");
+        let desired = desired_fingerprint(&normalized).expect("desired fingerprint should build");
 
         runtime
             .put_capsule_request(
-                &app,
-                &environment,
                 "test-principal",
                 "idem-key-3",
-                "hash-c",
+                &request_hash,
                 &spec,
+                &normalized,
+                &desired,
             )
             .await
             .expect("capsule request should succeed");
@@ -821,13 +846,14 @@ mod tests {
     }
 
     fn sample_spec(app: &str, environment: &str) -> CapsuleSpec {
+        let owner_role = format!("{app}_{environment}_app");
         CapsuleSpec {
             database: DatabaseSpec {
                 name: format!("app_{app}_{environment}"),
-                owner_role: format!("{app}_{environment}_owner"),
+                owner_role: owner_role.clone(),
             },
             roles: vec![RoleSpec {
-                name: format!("{app}_{environment}_app"),
+                name: owner_role,
                 connection_limit: Some(50),
             }],
             privilege_policy: PrivilegePolicy {

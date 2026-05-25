@@ -17,3 +17,12 @@ How to use this folder:
 - keep Phase 2 implementation detail here
 - record any new design shifts here before code drifts away from the plan
 - if something clearly belongs to Phase 3, add it as notes before Phase 2 closes
+
+Current status:
+- Workstream 01 complete with a normalized internal capsule model and validation rules
+- Workstream 02 complete with desired and observed fingerprint generation plus checked query metadata refresh
+- Workstream 03 complete with deterministic drift classification and planner-facing drift output
+
+Phase closeout status:
+- Phase 2 complete
+- Phase 3 folder created and populated from the implemented reconciliation/rollback work

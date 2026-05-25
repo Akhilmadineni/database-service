@@ -1,6 +1,10 @@
 pub mod api;
 pub mod capsule;
 pub mod config;
+pub mod drift;
 pub mod error;
+pub mod fingerprint;
 pub mod health;
+pub mod observed;
 pub mod operation;
+pub mod plan;

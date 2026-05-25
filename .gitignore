@@ -2,3 +2,4 @@ target/
 .env
 data/
 api-smoke*.log
+phase23-api*.log

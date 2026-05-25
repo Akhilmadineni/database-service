@@ -259,8 +259,10 @@ dependencies = [
 name = "database-service-core"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "time",
  "uuid",
@@ -271,11 +273,14 @@ name = "database-service-store"
 version = "0.1.0"
 dependencies = [
  "database-service-core",
+ "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "thiserror",
  "time",
  "tokio",
+ "url",
  "uuid",
 ]
 

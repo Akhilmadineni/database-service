@@ -13,6 +13,8 @@ Phases:
 - [phase-0](./phase-0/README.md)
 - [phase-1](./phase-1/README.md)
 - [phase-2](./phase-2/README.md)
+- [phase-3](./phase-3/README.md)
+- [phase-4](./phase-4/README.md)
 
 Agents:
 - [agents](./agents/README.md)
